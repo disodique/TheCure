@@ -1,0 +1,1 @@
+TheCure is a music player in python created because i couldn't find any music player that suited me 
