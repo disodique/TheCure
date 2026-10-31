@@ -56,7 +56,7 @@ def sort_info(path: Path):
     title, track = read_tags(path)
     return (parse_track(track), (title or path.name).lower())
 
-def build_tree(node, folder: Path):
+'''def build_tree(node, folder: Path):
     entries = sorted(
         os.listdir(folder),
         key =lambda name: (
@@ -73,6 +73,33 @@ def build_tree(node, folder: Path):
         elif full.is_dir():
             child = node.add(name, data=full)
             build_tree(child, full)
+'''
+
+def scan_folder(folder: Path):
+    result = []
+    entries = sorted(
+        os.listdir(folder),
+        key=lambda name: (
+            not (folder / name).is_dir(),
+            *sort_info(folder / name),
+        ),
+    )
+    for name in entries:
+        full = folder / name
+        if full.is_dir():
+            result.append((name, full, scan_folder(full)))
+        elif full.suffix.lower() in extensions_audio:
+            title = read_tags(full)[0]
+            result.append((title or name, full, None))
+    return result
+
+def add_nodes(node, items):
+    for label, full, children in items:
+        if children is None:
+            node.add_leaf(label, data=full)
+        else:
+            child = node.add(label, data=full)
+            add_nodes(child, children)
 
 class TheCure(App):
 
@@ -86,12 +113,10 @@ class TheCure(App):
         tree.root.expand()
 
         yield Header()
-        yield tree
+        yield Tree("Music " + path, id="tree")
         yield Footer()
 
-        build_tree(tree.root, Path(path))
-
-        
+        #build_tree(tree.root, Path(path))
 
     def action_toggle_expand_all(self) -> None:
         tree = self.query_one(Tree)
@@ -106,6 +131,24 @@ class TheCure(App):
 
     def on_mount(self):
         self.player = vlc.MediaPlayer()
+        tree = self.query_one(Tree)
+        tree.loading = True
+        self.sub_title = "Library is loading"
+        self.load_library()
+
+    @work(thread=True)
+    def load_library(self) -> None:
+        data = scan_folder(Path(path))
+        self.call_from_thread(self.show_library, data)
+
+    def show_library(self, data) -> None:
+        tree = self.query_one(Tree)
+        add_nodes(tree.root, data)
+        tree.root.expand()
+        tree.loading = False
+        self.sub_title = ""
+
+    
 
     def on_tree_node_selected(self, event : Tree.NodeSelected):
         file_path = event.node.data
